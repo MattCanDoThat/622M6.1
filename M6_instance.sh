@@ -520,8 +520,9 @@ GROUP BY p.id, p.currentPrice, p.name;
 --
 --   Root fields:
 --     customer_name      : firstName + ' ' + lastName
---     printed_address_1  : address1, or address1 + ' #' + address2
---                          when address2 is NOT NULL / empty
+--     printed_address_1  : address1 only when address2 is NULL/empty
+--                          address1 + ' ' + address2 when present
+--                          (data already has 'Apt #NNN' format — no # separator needed)
 --     printed_address_2  : "City, ST   ZZZZZ"
 --                          (city from City table; 3 spaces before zip)
 --
@@ -574,7 +575,7 @@ SELECT JSON_OBJECT(
     'printed_address_1', CASE
                              WHEN c.address2 IS NULL OR c.address2 = ''
                                  THEN c.address1
-                             ELSE CONCAT(c.address1, ' #', c.address2)
+                             ELSE CONCAT(c.address1, ' ', c.address2)
                          END,
     'printed_address_2', CONCAT(ct.city, ', ', ct.state, '   ', LPAD(c.zip, 5, '0')),
     'orders',            oa.orders_json
