@@ -1,20 +1,12 @@
 #!/bin/bash
-# ============================================================
-#  M6_instance.sh  |  ISTM 622 – Module 6 User Data Script
-#  Fully automated deployment — paste into EC2 User Data field.
-#
-#  What this script does:
-#    1.  System prep + install MariaDB 11.8 (matches Modules 3/4)
-#    2.  Create Linux user mbennett + working directory
-#    3.  Download dataset zip from 622.gomillion.org
-#    4.  Generate etl.sql inline (same as Module 4)
-#    5.  Generate json.sql inline (Module 6 JSON export)
-#    6.  Run etl.sql  → builds POS database from CSVs
-#    7.  Run json.sql → exports 4 NDJSON files to
-#                       /var/lib/mysql-files/
-#
-#  On first SSH login, all 4 JSON files should already exist.
-# ============================================================
+set -euo pipefail
+
+# ----------------------------
+# On my honor, as an Aggie, I have neither given nor received unauthorized assistance on this assignment.
+# I further affirm that I have not and will not provide this code to any person, platform, or repository,
+# without the express written permission of Dr. Gomillion.
+# I understand that any violation of these standards will have serious repercussions.
+# ----------------------------
 
 exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
 
@@ -239,7 +231,6 @@ exec /usr/local/bin/watch-userdata-progress
 EOF
 chmod 755 /usr/local/bin/watchud
 
-# Add watchud alias to ubuntu user's .bashrc for convenience
 if [ -f /home/ubuntu/.bashrc ] && ! grep -q "alias watchud=" /home/ubuntu/.bashrc 2>/dev/null; then
   echo "" >> /home/ubuntu/.bashrc
   echo "alias watchud='/usr/local/bin/watchud'" >> /home/ubuntu/.bashrc
@@ -764,6 +755,12 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 LogStatus "etl.sql complete — POS database built"
+
+# Ensure the secure file output directory exists with correct ownership.
+# MariaDB 11.8 from the official repo does not create this automatically.
+mkdir -p /var/lib/mysql-files
+chown mysql:mysql /var/lib/mysql-files
+chmod 750 /var/lib/mysql-files
 
 # Clean up any stale JSON files from a previous run so INTO OUTFILE
 # does not fail with "File already exists"
