@@ -206,10 +206,8 @@ while true; do
   # Completion check — STEP 7 of 7
   if tail -n 50 "$ProgressLog" 2>/dev/null | grep -q "STEP 7 of 7"; then
     RenderLine 100 7 7 "$CurrentLabel" ""
-    printf "\n\n${C_GREEN}  Deployment complete — all 4 JSON files are ready.${C_RESET}\n"
-    printf "\n  ${C_BOLD}JSON files in /var/lib/mysql-files/:${C_RESET}\n"
-    ls -lh /var/lib/mysql-files/*.json 2>/dev/null | sed 's/^/    /' || true
-    printf "\n  ${C_DIM}Validate with: sudo head -n 1 /var/lib/mysql-files/cust.json${C_RESET}\n\n"
+    printf "\n\n${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
+    printf "  ${C_DIM}SSH in and run: ls -lh /var/lib/mysql-files/${C_RESET}\n\n"
     exit 0
   fi
 
