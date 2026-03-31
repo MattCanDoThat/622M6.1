@@ -208,7 +208,7 @@ while true; do
     RenderLine 100 7 7 "$CurrentLabel" ""
     printf "\n\n${C_GREEN}  Deployment complete — all 4 JSON files are ready.${C_RESET}\n"
     printf "\n  ${C_BOLD}JSON files in /var/lib/mysql-files/:${C_RESET}\n"
-    sudo bash -c 'ls -lh /var/lib/mysql-files/*.json 2>/dev/null' | sed 's/^/    /' || true
+    ls -lh /var/lib/mysql-files/*.json 2>/dev/null | sed 's/^/    /' || true
     printf "\n  ${C_DIM}Validate with: sudo head -n 1 /var/lib/mysql-files/cust.json${C_RESET}\n\n"
     exit 0
   fi
@@ -760,7 +760,7 @@ LogStatus "etl.sql complete — POS database built"
 # MariaDB 11.8 from the official repo does not create this automatically.
 mkdir -p /var/lib/mysql-files
 chown mysql:mysql /var/lib/mysql-files
-chmod 750 /var/lib/mysql-files
+chmod 755 /var/lib/mysql-files
 
 # Clean up any stale JSON files from a previous run so INTO OUTFILE
 # does not fail with "File already exists"
