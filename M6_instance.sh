@@ -153,6 +153,8 @@ LastLineCount=0
 i=0
 frames='|/-\'
 ShownFilled=0
+TargetFill=0
+StatusCount=0
 
 PrintStepBanner() {
   local StepNum="$1"
@@ -191,6 +193,8 @@ while true; do
 
     LastPrintedStep="$CurrentStep"
     ShownFilled=0
+    TargetFill=0
+    StatusCount=0
 
     # Print banner for the new current step
     printf "\r%-*s" "$Cols" " "
@@ -214,8 +218,28 @@ while true; do
     exit 0
   fi
 
-  # Smooth fill toward full
-  if [ "$ShownFilled" -lt "$TotalBarWidth" ]; then
+  # Hybrid fill bar:
+  #   - Real milestones: each LogStatus call within the current step
+  #     advances the TARGET forward in real jumps
+  #   - Smooth animation: ShownFilled creeps toward the target every tick
+  #     so the bar animates rather than jumping
+  #   - Hard cap at 90% until the next NextStep fires (real completion)
+  #
+  # Only re-scan the log when new lines appear — avoids grep cost every tick
+  if [ "$CurrentLineCount" -gt "$LastLineCount" ]; then
+    StepStartLine=$(grep -n "STEP ${CurrentStep:-1} of" "$ProgressLog" 2>/dev/null | tail -1 | cut -d: -f1)
+    if [ -n "${StepStartLine:-}" ]; then
+      StatusCount=$(tail -n +"$StepStartLine" "$ProgressLog" 2>/dev/null | grep -c "^Status:" || echo 0)
+    else
+      StatusCount=0
+    fi
+    MaxFill=$(( TotalBarWidth * 90 / 100 ))
+    TargetFill=$(( StatusCount * TotalBarWidth / 8 ))
+    [ "$TargetFill" -gt "$MaxFill" ] && TargetFill="$MaxFill"
+  fi
+
+  # Smooth-fill: creep toward target one unit per tick
+  if [ "$ShownFilled" -lt "${TargetFill:-0}" ]; then
     ShownFilled=$((ShownFilled + 1))
   fi
 
@@ -226,7 +250,7 @@ while true; do
   printf "${C_WHITE}Deploying ${C_RESET}"
   DrawPartialBar "$ShownFilled"
   printf " ${C_YELLOW}%3d%%${C_RESET}  ${C_CYAN}STEP %s/%s${C_RESET}  ${C_YELLOW}%s${C_RESET}" \
-    "$ShownPct" "${CurrentStep:-?}" "${StepTotal:-?}" "$frame"
+    "$ShownPct" "${CurrentStep:-?}" "${StepTotal:-?}" " $frame"
 
   i=$((i+1))
   LastLineCount="$CurrentLineCount"
