@@ -50,7 +50,7 @@ set -u
 
 ProgressLog="/var/log/user-data-progress.log"
 TotalBarWidth=24
-RefreshSeconds=0.5
+RefreshSeconds=1.5
 
 if [ ! -f "$ProgressLog" ]; then
   echo "Progress log not found: $ProgressLog"
@@ -173,25 +173,27 @@ while true; do
   CurrentLabel=$(GetLatestLabel)
   [ -z "${CurrentLabel:-}" ] && CurrentLabel="Starting..."
 
-  # When a new step is detected:
-  #   1. Print Deployed line for the step that just finished
-  #   2. Print banner for the new current step
+  # When new steps are detected, catch up by printing all completed steps
+  # then print the banner for the current active step
   if [ "${CurrentStep:-0}" -gt "$LastPrintedStep" ]; then
 
-    # Print Deployed line for the step that just completed (if any)
-    if [ "$LastPrintedStep" -gt 0 ]; then
-      CompletedLabel=$(awk -v n="$LastPrintedStep" '
+    # Catch up: print Deployed for every completed step we missed
+    CatchStep=$((LastPrintedStep + 1))
+    while [ "$CatchStep" -lt "$CurrentStep" ]; do
+      CatchLabel=$(awk -v n="$CatchStep" '
         /^STEP [0-9]+ of [0-9]+/ {
           match($0, /STEP ([0-9]+)/, arr)
           if (arr[1]+0 == n+0) { getline; print; exit }
         }
       ' "$ProgressLog" 2>/dev/null || true)
-      [ -z "$CompletedLabel" ] && CompletedLabel="Step $LastPrintedStep"
+      [ -z "$CatchLabel" ] && CatchLabel="Step $CatchStep"
       printf "\r%-*s\n" "$Cols" " "
-      PrintDeployed "$LastPrintedStep" "$StepTotal"
-    fi
+      PrintStepBanner "$CatchStep" "$StepTotal" "$CatchLabel"
+      PrintDeployed "$CatchStep" "$StepTotal"
+      CatchStep=$((CatchStep + 1))
+    done
 
-    LastPrintedStep="$CurrentStep"
+    LastPrintedStep=$((CurrentStep - 1))
     ShownFilled=0
     TargetFill=0
     StatusCount=0
@@ -249,8 +251,8 @@ while true; do
   printf "\r\033[2K"
   printf "${C_WHITE}Deploying ${C_RESET}"
   DrawPartialBar "$ShownFilled"
-  printf " ${C_YELLOW}%3d%%${C_RESET}  ${C_CYAN}STEP %s/%s${C_RESET}  ${C_YELLOW}%s${C_RESET}" \
-    "$ShownPct" "${CurrentStep:-?}" "${StepTotal:-?}" " $frame"
+  printf " ${C_YELLOW}%3d%%${C_RESET}  ${C_CYAN}STEP %s/%s${C_RESET}   ${C_YELLOW}%s${C_RESET}" \
+    "$ShownPct" "${CurrentStep:-?}" "${StepTotal:-?}" "$frame"
 
   i=$((i+1))
   LastLineCount="$CurrentLineCount"
