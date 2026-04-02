@@ -83,7 +83,7 @@ DrawBar() {
   local Filled=$((Percent * TotalBarWidth / 100))
   local Empty=$((TotalBarWidth - Filled))
 
-  printf "${C_WHITE}[${C_RESET}"
+  printf "["
   if [ "$Filled" -gt 0 ]; then
     printf "%s" "${C_CYAN}"
     printf "%0.s#" $(seq 1 "$Filled")
@@ -94,7 +94,7 @@ DrawBar() {
     printf "%0.s-" $(seq 1 "$Empty")
     printf "%s" "${C_RESET}"
   fi
-  printf "${C_WHITE}]${C_RESET} %s%%" "$Percent"
+  printf "] %s%%" "$Percent"
 }
 
 GetLatestStepLine() {
@@ -102,10 +102,12 @@ GetLatestStepLine() {
 }
 
 GetLatestPercent() {
-  local line
+  local line StepNow StepTotal
   line="$(GetLatestStepLine)"
   if [ -n "$line" ]; then
-    echo "$line" | sed -n 's/STEP \([0-9]\+\) of \([0-9]\+\).*/\1/p' |       awk -v total="$(echo "$line" | sed -n 's/STEP [0-9]\+ of \([0-9]\+\).*/\1/p')"         '{printf "%d", ($1 * 100 / total)}'
+    StepNow=$(echo "$line" | sed -n 's/STEP \([0-9]\+\) of.*/\1/p')
+    StepTotal=$(echo "$line" | sed -n 's/STEP [0-9]\+ of \([0-9]\+\).*/\1/p')
+    echo $(( StepNow * 100 / StepTotal ))
   else
     echo "0"
   fi
@@ -152,12 +154,8 @@ RenderLine() {
   # \r\033[2K clears the entire current line before redrawing — prevents
   # ANSI-inflated line width from wrapping and leaving ghost fragments on right
   printf "\r\033[2K"
-  if [ -n "$Frame" ]; then
-    printf "${C_WHITE}Deploying${C_RESET} %s  %s  ${C_YELLOW}%s${C_RESET}   ${C_YELLOW}%s${C_RESET}" \
-      "$Bar" "$StepText" "$TruncLabel" "$Frame"
-  else
-    printf "${C_WHITE}Deployed  ${C_RESET}%s  %s" "$Bar" "$StepText"
-  fi
+  printf "${C_WHITE}Deploying${C_RESET} %s  %s  ${C_YELLOW}%s${C_RESET}  %s" \
+    "$Bar" "$StepText" "$TruncLabel" "$Frame"
 }
 
 echo ""
@@ -185,11 +183,6 @@ while true; do
     NewLines=$(sed -n "$((LastLineCount+1)),${CurrentLineCount}p" "$ProgressLog" 2>/dev/null || true)
     if echo "$NewLines" | grep -qE "^STEP [0-9]+ of [0-9]+"; then
       printf "\r%-*s\n" "$Cols" " "
-      # Print Deployed for the step that just completed
-      if [ "${StepNow:-0}" -gt 0 ]; then
-        FullBar="$(DrawBar 100)"
-        printf "${C_WHITE}Deployed  ${C_RESET}%s  ${C_GREEN}STEP %s/%s${C_RESET}\n\n"           "$FullBar" "$StepNow" "${StepTotal:-7}"
-      fi
       echo "$NewLines" | grep -E "^(={10,}|STEP [0-9]+ of [0-9]+)" || true
     fi
     LastLineCount="$CurrentLineCount"
@@ -213,7 +206,7 @@ while true; do
     ShownPercent="$TargetPercent"
   fi
 
-  # Completion check — STEP 7 of 7
+  # Completion check — STEP 8 of 8
   if tail -n 50 "$ProgressLog" 2>/dev/null | grep -q "STEP 7 of 7"; then
     RenderLine 100 7 7 "$CurrentLabel" ""
     printf "\n\n${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
