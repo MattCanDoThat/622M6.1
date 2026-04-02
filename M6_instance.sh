@@ -125,11 +125,11 @@ GetAllSteps() {
 }
 
 GetLatestStepNum() {
-  grep -oE "STEP [0-9]+ of [0-9]+" "$ProgressLog" 2>/dev/null | tail -1 | grep -oE "^STEP [0-9]+" | grep -oE "[0-9]+" || echo "0"
+  grep -oE "STEP [0-9]+ of [0-9]+" "$ProgressLog" 2>/dev/null | tail -1 | sed -n "s/STEP \([0-9]\+\) of.*/\1/p" || echo "0"
 }
 
 GetLatestStepTotal() {
-  grep -oE "STEP [0-9]+ of [0-9]+" "$ProgressLog" 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo "0"
+  grep -oE "STEP [0-9]+ of [0-9]+" "$ProgressLog" 2>/dev/null | tail -1 | sed -n "s/STEP [0-9]\+ of \([0-9]\+\).*/\1/p" || echo "0"
 }
 
 GetLatestLabel() {
