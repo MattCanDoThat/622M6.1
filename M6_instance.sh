@@ -98,14 +98,14 @@ DrawBar() {
 }
 
 GetLatestStepLine() {
-  grep -E "STEP [0-9]+ of [0-9]+  \[[0-9]+%\]" "$ProgressLog" 2>/dev/null | tail -n 1 || true
+  grep -E "STEP [0-9]+ of [0-9]+" "$ProgressLog" 2>/dev/null | tail -n 1 || true
 }
 
 GetLatestPercent() {
   local line
   line="$(GetLatestStepLine)"
   if [ -n "$line" ]; then
-    echo "$line" | sed -n 's/.*\[\([0-9]\+\)%\].*/\1/p'
+    echo "$line" | sed -n 's/STEP \([0-9]\+\) of \([0-9]\+\).*/\1/p' |       awk -v total="$(echo "$line" | sed -n 's/STEP [0-9]\+ of \([0-9]\+\).*/\1/p')"         '{printf "%d", ($1 * 100 / total)}'
   else
     echo "0"
   fi
@@ -122,7 +122,7 @@ GetLatestStepNumbers() {
 }
 
 GetLatestLabel() {
-  awk '/STEP [0-9]+ of [0-9]+  \[[0-9]+%\]/{getline; print}' "$ProgressLog" 2>/dev/null | tail -n 1 || true
+  awk '/STEP [0-9]+ of [0-9]+/{getline; print}' "$ProgressLog" 2>/dev/null | tail -n 1 || true
 }
 
 RenderLine() {
@@ -185,6 +185,11 @@ while true; do
     NewLines=$(sed -n "$((LastLineCount+1)),${CurrentLineCount}p" "$ProgressLog" 2>/dev/null || true)
     if echo "$NewLines" | grep -qE "^STEP [0-9]+ of [0-9]+"; then
       printf "\r%-*s\n" "$Cols" " "
+      # Print Deployed for the step that just completed
+      if [ "${StepNow:-0}" -gt 0 ]; then
+        FullBar="$(DrawBar 100)"
+        printf "${C_WHITE}Deployed  ${C_RESET}%s  ${C_GREEN}STEP %s/%s${C_RESET}\n\n"           "$FullBar" "$StepNow" "${StepTotal:-7}"
+      fi
       echo "$NewLines" | grep -E "^(={10,}|STEP [0-9]+ of [0-9]+)" || true
     fi
     LastLineCount="$CurrentLineCount"
