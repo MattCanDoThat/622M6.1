@@ -80,29 +80,22 @@ Cols=$(tput cols 2>/dev/null || echo 120)
 
 # Draw a full bar (used for completed steps)
 DrawFullBar() {
-  printf "${C_GREEN}[${C_RESET}"
-  printf "${C_GREEN}"
-  printf "%0.s#" $(seq 1 $TotalBarWidth)
-  printf "${C_RESET}"
-  printf "${C_GREEN}] 100%%${C_RESET}"
+  # Build entire string then print once — no flicker
+  # Bar stays cyan (blue), brackets and percentage go green to show complete
+  local Hashes
+  Hashes=$(python3 -c "print('#' * $TotalBarWidth)" 2>/dev/null || printf '%0.s#' $(seq 1 $TotalBarWidth))
+  printf "${C_CYAN}[%s] 100%%${C_RESET}" "$Hashes"
 }
 
 # Draw a partial bar (used for current step)
 DrawPartialBar() {
   local Filled="$1"
   local Empty=$(( TotalBarWidth - Filled ))
-  printf "${C_CYAN}[${C_RESET}"
-  if [ "$Filled" -gt 0 ]; then
-    printf "${C_CYAN}"
-    printf "%0.s#" $(seq 1 "$Filled")
-    printf "${C_RESET}"
-  fi
-  if [ "$Empty" -gt 0 ]; then
-    printf "${C_DIM}"
-    printf "%0.s-" $(seq 1 "$Empty")
-    printf "${C_RESET}"
-  fi
-  printf "${C_CYAN}]${C_RESET}"
+  # Build strings first, print once — eliminates per-character flicker
+  local FillStr="" EmptyStr=""
+  [ "$Filled" -gt 0 ] && FillStr=$(python3 -c "print('#' * $Filled)" 2>/dev/null || printf '%0.s#' $(seq 1 "$Filled"))
+  [ "$Empty"  -gt 0 ] && EmptyStr=$(python3 -c "print('-' * $Empty)"  2>/dev/null || printf '%0.s-' $(seq 1 "$Empty"))
+  printf "${C_CYAN}[${C_GREEN}%s${C_DIM}%s${C_CYAN}]${C_RESET}" "$FillStr" "$EmptyStr"
 }
 
 # Get all completed step numbers and labels from log
