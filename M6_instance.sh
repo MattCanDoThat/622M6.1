@@ -193,7 +193,8 @@ while true; do
       CatchStep=$((CatchStep + 1))
     done
 
-    LastPrintedStep=$((CurrentStep - 1))
+    LastPrintedStep="$CurrentStep"
+    LastBannerStep="$CurrentStep"
     ShownFilled=0
     TargetFill=0
     StatusCount=0
@@ -201,7 +202,6 @@ while true; do
     # Print banner for the new current step
     printf "\r%-*s" "$Cols" " "
     PrintStepBanner "$CurrentStep" "$StepTotal" "$CurrentLabel"
-    LastBannerStep="$CurrentStep"
   fi
 
   # If we SSHd in after steps already ran, print banner for current step if not yet shown
@@ -209,6 +209,7 @@ while true; do
     printf "\r%-*s" "$Cols" " "
     PrintStepBanner "$CurrentStep" "$StepTotal" "$CurrentLabel"
     LastBannerStep="$CurrentStep"
+    LastPrintedStep="$CurrentStep"
   fi
 
   # Completion check — final step done
