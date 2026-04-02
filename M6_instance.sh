@@ -154,8 +154,8 @@ RenderLine() {
   # \r\033[2K clears the entire current line before redrawing — prevents
   # ANSI-inflated line width from wrapping and leaving ghost fragments on right
   printf "\r\033[2K"
-  printf "${C_WHITE}Deploying${C_RESET} %s  %s  ${C_YELLOW}%s${C_RESET}" \
-    "$Bar" "$StepText" "$Frame"
+  printf "${C_WHITE}Deploying${C_RESET} %s  ${C_YELLOW}%s${C_RESET}" \
+    "$Bar" "$Frame"
 }
 
 echo ""
@@ -169,6 +169,13 @@ ShownPercent="$TargetPercent"
 read -r StepNow StepTotal <<<"$(GetLatestStepNumbers)"
 CurrentLabel="$(GetLatestLabel)"
 [ -z "${CurrentLabel:-}" ] && CurrentLabel="Starting..."
+
+# Print the current step banner on startup so it always shows above the bar
+if [ "${StepNow:-0}" -gt 0 ]; then
+  printf "${C_DIM}=========================================================${C_RESET}\n"
+  printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$StepNow" "$StepTotal" "$CurrentLabel"
+  printf "${C_DIM}=========================================================${C_RESET}\n"
+fi
 
 i=0
 frames='|/-\'
