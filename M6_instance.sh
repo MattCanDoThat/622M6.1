@@ -468,6 +468,7 @@ DROP TABLE staging_customer;
 DROP TABLE staging_orders;
 DROP TABLE staging_orderlines;
 DROP TABLE staging_products;
+
 ETLEOF
 
 chown mbennett:mbennett /home/mbennett/etl.sql
@@ -744,6 +745,40 @@ chown mbennett:mbennett /home/mbennett/json.sql
 chmod 644 /home/mbennett/json.sql
 LogStatus "json.sql written"
 
+# Generate title_case.sql — creates function + updates City table
+# Must be run separately with --delimiter so BEGIN...END parses correctly
+cat > /home/mbennett/title_case.sql << 'TCEOF'
+USE POS//
+DROP FUNCTION IF EXISTS title_case//
+CREATE FUNCTION title_case(str VARCHAR(255))
+RETURNS VARCHAR(255)
+DETERMINISTIC
+BEGIN
+    DECLARE result VARCHAR(255) DEFAULT '';
+    DECLARE word VARCHAR(255);
+    DECLARE remainder VARCHAR(255) DEFAULT str;
+    DECLARE pos INT;
+    WHILE LENGTH(remainder) > 0 DO
+        SET pos = LOCATE(' ', remainder);
+        IF pos = 0 THEN
+            SET word = remainder;
+            SET remainder = '';
+        ELSE
+            SET word = SUBSTRING(remainder, 1, pos - 1);
+            SET remainder = SUBSTRING(remainder, pos + 1);
+        END IF;
+        SET result = CONCAT(result, UPPER(LEFT(word, 1)), LOWER(SUBSTRING(word, 2)), ' ');
+    END WHILE;
+    RETURN TRIM(result);
+END//
+UPDATE City SET city = title_case(city)//
+DROP FUNCTION IF EXISTS title_case//
+TCEOF
+
+chown mbennett:mbennett /home/mbennett/title_case.sql
+chmod 644 /home/mbennett/title_case.sql
+LogStatus "title_case.sql written"
+
 # ── STEP 7: Run ETL then JSON export ────────────────────────
 NextStep "Running etl.sql and json.sql"
 
@@ -754,6 +789,14 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 LogStatus "etl.sql complete — POS database built"
+
+LogStatus "Applying title case to city names"
+mariadb --delimiter="//" < /home/mbennett/title_case.sql
+if [ $? -ne 0 ]; then
+  echo "ERROR: title_case.sql failed. Check /var/log/user-data.log"
+  exit 1
+fi
+LogStatus "City names updated to proper title case"
 
 # Ensure the secure file output directory exists with correct ownership.
 # MariaDB 11.8 from the official repo does not create this automatically.
