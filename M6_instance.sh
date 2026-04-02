@@ -28,10 +28,10 @@ NextStep() {
   Percent=$((CurrentStep*100/TotalSteps))
   {
     echo ""
-    echo "=================================================="
+    echo "========================================================="
     echo "STEP $CurrentStep of $TotalSteps  [$Percent%]"
     echo "$1"
-    echo "=================================================="
+    echo "========================================================="
   } | tee -a "$ProgressLog"
 }
 
@@ -80,22 +80,22 @@ Cols=$(tput cols 2>/dev/null || echo 120)
 
 # Draw a full bar (used for completed steps)
 DrawFullBar() {
-  # Build entire string then print once — no flicker
-  # Bar stays cyan (blue), brackets and percentage go green to show complete
-  local Hashes
-  Hashes=$(python3 -c "print('#' * $TotalBarWidth)" 2>/dev/null || printf '%0.s#' $(seq 1 $TotalBarWidth))
-  printf "${C_CYAN}[%s] 100%%${C_RESET}" "$Hashes"
+  # Pure bash repeat — no subprocess, no flicker
+  local Hashes="" n=0
+  while [ $n -lt $TotalBarWidth ]; do Hashes="${Hashes}#"; n=$((n+1)); done
+  printf "${C_WHITE}[${C_CYAN}%s${C_WHITE}]${C_GREEN} 100%%  ${C_RESET}" "$Hashes"
 }
 
 # Draw a partial bar (used for current step)
 DrawPartialBar() {
   local Filled="$1"
   local Empty=$(( TotalBarWidth - Filled ))
-  # Build strings first, print once — eliminates per-character flicker
-  local FillStr="" EmptyStr=""
-  [ "$Filled" -gt 0 ] && FillStr=$(python3 -c "print('#' * $Filled)" 2>/dev/null || printf '%0.s#' $(seq 1 "$Filled"))
-  [ "$Empty"  -gt 0 ] && EmptyStr=$(python3 -c "print('-' * $Empty)"  2>/dev/null || printf '%0.s-' $(seq 1 "$Empty"))
-  printf "${C_CYAN}[${C_GREEN}%s${C_DIM}%s${C_CYAN}]${C_RESET}" "$FillStr" "$EmptyStr"
+  # Pure bash repeat — no subprocess, no flicker
+  local FillStr="" EmptyStr="" n=0
+  while [ $n -lt "$Filled" ]; do FillStr="${FillStr}#"; n=$((n+1)); done
+  n=0
+  while [ $n -lt "$Empty" ];  do EmptyStr="${EmptyStr}-"; n=$((n+1)); done
+  printf "${C_WHITE}[${C_CYAN}%s${C_DIM}%s${C_WHITE}]${C_RESET}" "$FillStr" "$EmptyStr"
 }
 
 # Get all completed step numbers and labels from log
@@ -137,10 +137,10 @@ GetLatestStatus() {
 PrintDeployed() {
   local StepNum="$1"
   local StepTotal="$2"
-  local Label="$3"
   printf "${C_WHITE}Deployed  ${C_RESET}"
   DrawFullBar
-  printf "  ${C_GREEN}STEP %s/%s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$StepNum" "$StepTotal" "$Label"
+  printf "${C_GREEN}STEP %s/%s${C_RESET}\n" "$StepNum" "$StepTotal"
+  echo ""
 }
 
 echo ""
@@ -176,10 +176,10 @@ while true; do
       ' "$ProgressLog" 2>/dev/null || true)
       [ -z "$StepLabel" ] && StepLabel="Step $CompletedStep"
       printf "\r%-*s\n" "$Cols" " "
-      printf "${C_DIM}==================================================${C_RESET}\n"
+      printf "${C_DIM}=========================================================${C_RESET}\n"
       printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$CompletedStep" "$StepTotal" "$StepLabel"
-      printf "${C_DIM}==================================================${C_RESET}\n"
-      PrintDeployed "$CompletedStep" "$StepTotal" "$StepLabel"
+      printf "${C_DIM}=========================================================${C_RESET}\n"
+      PrintDeployed "$CompletedStep" "$StepTotal"
       echo ""
     done
     LastPrintedStep=$((CurrentStep - 1))
@@ -190,10 +190,10 @@ while true; do
   if [ "${CurrentStep:-0}" -ge "${StepTotal:-7}" ] && [ "${StepTotal:-0}" -gt 0 ]; then
     # Print final Deployed line
     printf "\r%-*s\n" "$Cols" " "
-    printf "${C_DIM}==================================================${C_RESET}\n"
+    printf "${C_DIM}=========================================================${C_RESET}\n"
     printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$CurrentStep" "$StepTotal" "$CurrentLabel"
-    printf "${C_DIM}==================================================${C_RESET}\n"
-    PrintDeployed "$CurrentStep" "$StepTotal" "$CurrentLabel"
+    printf "${C_DIM}=========================================================${C_RESET}\n"
+    PrintDeployed "$CurrentStep" "$StepTotal"
     echo ""
     printf "${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
     printf "  ${C_DIM}SSH in and run: ls -lh /var/lib/mysql-files/${C_RESET}\n\n"
