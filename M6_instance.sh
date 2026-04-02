@@ -147,72 +147,86 @@ echo ""
 echo "${C_BOLD}Watching EC2 user-data progress${C_RESET} (Ctrl+C to stop)"
 echo ""
 
-LastPrintedStep=0
+LastPrintedStep=0   # tracks which step's Deployed line has been printed
+LastBannerStep=0    # tracks which step's banner has been printed
 LastLineCount=0
 i=0
 frames='|/-\'
 ShownFilled=0
+
+PrintStepBanner() {
+  local StepNum="$1"
+  local StepTotal="$2"
+  local Label="$3"
+  printf "\n"
+  printf "${C_DIM}=========================================================${C_RESET}\n"
+  printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$StepNum" "$StepTotal" "$Label"
+  printf "${C_DIM}=========================================================${C_RESET}\n"
+}
 
 while true; do
   CurrentLineCount=$(wc -l < "$ProgressLog" 2>/dev/null || echo "$LastLineCount")
   CurrentStep=$(GetLatestStepNum)
   StepTotal=$(GetLatestStepTotal)
   CurrentLabel=$(GetLatestLabel)
-  CurrentStatus=$(GetLatestStatus)
   [ -z "${CurrentLabel:-}" ] && CurrentLabel="Starting..."
-  [ -z "${CurrentStatus:-}" ] && CurrentStatus="Initializing..."
 
-  # Print permanent Deployed lines for newly completed steps
+  # When a new step is detected:
+  #   1. Print Deployed line for the step that just finished
+  #   2. Print banner for the new current step
   if [ "${CurrentStep:-0}" -gt "$LastPrintedStep" ]; then
-    # Print separator + Deployed line for each step that just completed
-    CompletedStep=$LastPrintedStep
-    while [ "$CompletedStep" -lt "$((CurrentStep - 1))" ]; do
-      CompletedStep=$((CompletedStep + 1))
-      StepLabel=$(awk -v n="$CompletedStep" '
+
+    # Print Deployed line for the step that just completed (if any)
+    if [ "$LastPrintedStep" -gt 0 ]; then
+      CompletedLabel=$(awk -v n="$LastPrintedStep" '
         /^STEP [0-9]+ of [0-9]+/ {
           match($0, /STEP ([0-9]+)/, arr)
           if (arr[1]+0 == n+0) { getline; print; exit }
         }
       ' "$ProgressLog" 2>/dev/null || true)
-      [ -z "$StepLabel" ] && StepLabel="Step $CompletedStep"
+      [ -z "$CompletedLabel" ] && CompletedLabel="Step $LastPrintedStep"
       printf "\r%-*s\n" "$Cols" " "
-      printf "${C_DIM}=========================================================${C_RESET}\n"
-      printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$CompletedStep" "$StepTotal" "$StepLabel"
-      printf "${C_DIM}=========================================================${C_RESET}\n"
-      PrintDeployed "$CompletedStep" "$StepTotal"
-      echo ""
-    done
-    LastPrintedStep=$((CurrentStep - 1))
+      PrintDeployed "$LastPrintedStep" "$StepTotal"
+    fi
+
+    LastPrintedStep="$CurrentStep"
     ShownFilled=0
+
+    # Print banner for the new current step
+    printf "\r%-*s" "$Cols" " "
+    PrintStepBanner "$CurrentStep" "$StepTotal" "$CurrentLabel"
+    LastBannerStep="$CurrentStep"
   fi
 
-  # Completion check — STEP 7 of 7
+  # If we SSHd in after steps already ran, print banner for current step if not yet shown
+  if [ "${CurrentStep:-0}" -gt 0 ] && [ "$LastBannerStep" -lt "$CurrentStep" ]; then
+    printf "\r%-*s" "$Cols" " "
+    PrintStepBanner "$CurrentStep" "$StepTotal" "$CurrentLabel"
+    LastBannerStep="$CurrentStep"
+  fi
+
+  # Completion check — final step done
   if [ "${CurrentStep:-0}" -ge "${StepTotal:-7}" ] && [ "${StepTotal:-0}" -gt 0 ]; then
-    # Print final Deployed line
     printf "\r%-*s\n" "$Cols" " "
-    printf "${C_DIM}=========================================================${C_RESET}\n"
-    printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$CurrentStep" "$StepTotal" "$CurrentLabel"
-    printf "${C_DIM}=========================================================${C_RESET}\n"
     PrintDeployed "$CurrentStep" "$StepTotal"
-    echo ""
     printf "${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
     printf "  ${C_DIM}SSH in and run: ls -lh /var/lib/mysql-files/${C_RESET}\n\n"
     exit 0
   fi
 
-  # Smooth fill toward full (target is always 100% for current step's bar)
+  # Smooth fill toward full
   if [ "$ShownFilled" -lt "$TotalBarWidth" ]; then
     ShownFilled=$((ShownFilled + 1))
   fi
 
-  # Single-line render — no cursor movement = no flicker
+  # Single-line animated Deploying bar — no cursor movement = no flicker
   frame="${frames:i%4:1}"
   ShownPct=$(( ShownFilled * 100 / TotalBarWidth ))
   printf "\r\033[2K"
-  printf "${C_WHITE}Deploying${C_RESET} "
+  printf "${C_WHITE}Deploying ${C_RESET}"
   DrawPartialBar "$ShownFilled"
-  printf " ${C_YELLOW}%3d%%${C_RESET}  ${C_CYAN}STEP %s/%s${C_RESET}  ${C_DIM}%s${C_RESET}  ${C_YELLOW}%s${C_RESET}" \
-    "$ShownPct" "${CurrentStep:-?}" "${StepTotal:-?}" "$CurrentLabel" "$frame"
+  printf " ${C_YELLOW}%3d%%${C_RESET}  ${C_CYAN}STEP %s/%s${C_RESET}  ${C_YELLOW}%s${C_RESET}" \
+    "$ShownPct" "${CurrentStep:-?}" "${StepTotal:-?}" "$frame"
 
   i=$((i+1))
   LastLineCount="$CurrentLineCount"
