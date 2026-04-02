@@ -28,10 +28,10 @@ NextStep() {
   Percent=$((CurrentStep*100/TotalSteps))
   {
     echo ""
-    echo "========================================================="
+    echo "================================================================="
     echo "STEP $CurrentStep of $TotalSteps"
     echo "$1"
-    echo "========================================================="
+    echo "================================================================="
   } | tee -a "$ProgressLog"
 }
 
@@ -173,9 +173,9 @@ CurrentLabel="$(GetLatestLabel)"
 # Print the current step banner on startup
 if [ "${StepNow:-0}" -gt 0 ]; then
   echo ""
-  printf "${C_DIM}=========================================================${C_RESET}\n"
+  printf "${C_DIM}=================================================================${C_RESET}\n"
   printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$StepNow" "$StepTotal" "$CurrentLabel"
-  printf "${C_DIM}=========================================================${C_RESET}\n"
+  printf "${C_DIM}=================================================================${C_RESET}\n"
 fi
 
 i=0
@@ -201,9 +201,9 @@ while true; do
       NewStepLbl=$(echo "$NewLines" | awk '/^STEP [0-9]+ of [0-9]+/{getline; print; exit}')
       NewStepTot=$(echo "$NewLines" | grep -oE "STEP [0-9]+ of [0-9]+" | tail -1 | grep -oE "[0-9]+$")
       echo ""
-      printf "${C_DIM}=========================================================${C_RESET}\n"
+      printf "${C_DIM}=================================================================${C_RESET}\n"
       printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$NewStepNum" "$NewStepTot" "$NewStepLbl"
-      printf "${C_DIM}=========================================================${C_RESET}\n"
+      printf "${C_DIM}=================================================================${C_RESET}\n"
     fi
     LastLineCount="$CurrentLineCount"
   fi
@@ -512,21 +512,21 @@ sleep 8
 LogStatus "Writing json.sql"
 
 cat > /home/mbennett/json.sql << 'JSONEOF'
--- ============================================================
+-- ====================================================================
 --  json.sql  |  ISTM 622 – Module 6 JSON Export
 --  Four NDJSON business-case exports from the POS database.
 --  Each SELECT writes one JSON object per line (NDJSON format).
 --  Run via:  sudo mariadb < /home/mbennett/json.sql
--- ============================================================
+-- ====================================================================
 
 USE POS;
 
--- ============================================================
+-- ====================================================================
 -- CASE 1: Product Aggregate  →  prod.json
 --   Root:   ProductID, currentPrice, productName
 --   Nested: customers[] — every customer who purchased it
 --           (CustomerID, customer_name)
--- ============================================================
+-- ====================================================================
 
 SELECT JSON_OBJECT(
     'ProductID',    p.id,
@@ -548,7 +548,7 @@ JOIN Customer  c  ON c.id           = o.customer_id
 GROUP BY p.id, p.currentPrice, p.name;
 
 
--- ============================================================
+-- ====================================================================
 -- CASE 2: Deep Customer Aggregate  →  cust.json
 --
 --   Root fields:
@@ -569,7 +569,7 @@ GROUP BY p.id, p.currentPrice, p.name;
 --   Built in 2 CTEs so each layer is debuggable independently:
 --     ItemsAgg  — items array + order total, grouped by order
 --     OrdersAgg — orders array, grouped by customer
--- ============================================================
+-- ====================================================================
 
 WITH ItemsAgg AS (
     SELECT
@@ -620,7 +620,7 @@ JOIN City      ct ON ct.zip         = c.zip
 JOIN OrdersAgg oa ON oa.customer_id = c.id;
 
 
--- ============================================================
+-- ====================================================================
 -- CASE 3 (Custom): Regional Territory Revenue View
 --   →  custom1.json
 --
@@ -634,7 +634,7 @@ JOIN OrdersAgg oa ON oa.customer_id = c.id;
 --   Root:   state, total_revenue, total_orders
 --   Nested: top_products[]
 --             ProductID, productName, units_sold, product_revenue
--- ============================================================
+-- ====================================================================
 
 WITH StateOrderCounts AS (
     SELECT
@@ -681,7 +681,7 @@ JOIN StateOrderCounts soc ON soc.state = spr.state
 GROUP BY spr.state, soc.total_orders;
 
 
--- ============================================================
+-- ====================================================================
 -- CASE 4 (Custom): Customer Lifetime Value & Loyalty Profile
 --   →  custom2.json
 --
@@ -698,7 +698,7 @@ GROUP BY spr.state, soc.total_orders;
 --           lifetime_spend, total_orders, avg_order_value
 --   Nested: top_products[]  (top 3 by spend)
 --             ProductID, productName, times_purchased, total_spent
--- ============================================================
+-- ====================================================================
 
 WITH CustomerOrderTotals AS (
     SELECT
@@ -855,8 +855,8 @@ LogStatus "json.sql complete — 4 NDJSON files generated"
 chown ubuntu:ubuntu /var/lib/mysql-files/*.json 2>/dev/null || true
 
 echo ""
-echo "============================================================"
+echo "===================================================================="
 echo "  M6 deployment complete."
 echo "  JSON files in /var/lib/mysql-files/:"
 ls -lh /var/lib/mysql-files/*.json
-echo "============================================================"
+echo "===================================================================="
