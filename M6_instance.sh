@@ -29,7 +29,7 @@ NextStep() {
   {
     echo ""
     echo "========================================================="
-    echo "STEP $CurrentStep of $TotalSteps  [$Percent%]"
+    echo "STEP $CurrentStep of $TotalSteps"
     echo "$1"
     echo "========================================================="
   } | tee -a "$ProgressLog"
@@ -50,153 +50,181 @@ set -u
 
 ProgressLog="/var/log/user-data-progress.log"
 TotalBarWidth=24
-RefreshSeconds=1.5
+RefreshSeconds=0.5
 
 if [ ! -f "$ProgressLog" ]; then
   echo "Progress log not found: $ProgressLog"
   exit 1
 fi
 
+# Colors only when output is a real terminal
 if [ -t 1 ]; then
-  C_RESET=$'\033[0m'; C_DIM=$'\033[2m'; C_BOLD=$'\033[1m'
-  C_CYAN=$'\033[36m'; C_YELLOW=$'\033[33m'; C_GREEN=$'\033[32m'; C_WHITE=$'\033[97m'
+  C_RESET=$'\033[0m'
+  C_DIM=$'\033[2m'
+  C_BOLD=$'\033[1m'
+  C_CYAN=$'\033[36m'
+  C_YELLOW=$'\033[33m'
+  C_GREEN=$'\033[32m'
+  C_WHITE=$'\033[97m'
 else
-  C_RESET=""; C_DIM=""; C_BOLD=""; C_CYAN=""; C_YELLOW=""; C_GREEN=""; C_WHITE=""
+  C_RESET=""
+  C_DIM=""
+  C_BOLD=""
+  C_CYAN=""
+  C_YELLOW=""
+  C_GREEN=""
+  C_WHITE=""
 fi
 
 Cols=$(tput cols 2>/dev/null || echo 120)
 
-DrawFullBar() {
-  local s="" n=0
-  while [ $n -lt $TotalBarWidth ]; do s="${s}#"; n=$((n+1)); done
-  printf "${C_WHITE}[${C_CYAN}%s${C_WHITE}]${C_GREEN} 100%%${C_RESET}" "$s"
+DrawBar() {
+  local Percent="$1"
+  local Filled=$((Percent * TotalBarWidth / 100))
+  local Empty=$((TotalBarWidth - Filled))
+
+  printf "${C_WHITE}[${C_RESET}"
+  if [ "$Filled" -gt 0 ]; then
+    printf "%s" "${C_CYAN}"
+    printf "%0.s#" $(seq 1 "$Filled")
+    printf "%s" "${C_RESET}"
+  fi
+  if [ "$Empty" -gt 0 ]; then
+    printf "%s" "${C_DIM}"
+    printf "%0.s-" $(seq 1 "$Empty")
+    printf "%s" "${C_RESET}"
+  fi
+  printf "${C_WHITE}]${C_RESET} %s%%" "$Percent"
 }
 
-DrawPartialBar() {
-  local Filled="$1" Empty=$(( TotalBarWidth - Filled ))
-  local f="" e="" n=0
-  while [ $n -lt "$Filled" ]; do f="${f}#"; n=$((n+1)); done
-  n=0
-  while [ $n -lt "$Empty" ];  do e="${e}-"; n=$((n+1)); done
-  printf "${C_WHITE}[${C_CYAN}%s${C_DIM}%s${C_WHITE}]${C_RESET}" "$f" "$e"
+GetLatestStepLine() {
+  grep -E "STEP [0-9]+ of [0-9]+  \[[0-9]+%\]" "$ProgressLog" 2>/dev/null | tail -n 1 || true
 }
 
-GetStepNum() {
-  grep -oE "STEP [0-9]+ of [0-9]+" "$ProgressLog" 2>/dev/null | tail -1 | \
-    sed -n "s/STEP \([0-9]\+\) of.*/\1/p" || echo "0"
+GetLatestPercent() {
+  local line
+  line="$(GetLatestStepLine)"
+  if [ -n "$line" ]; then
+    echo "$line" | sed -n 's/.*\[\([0-9]\+\)%\].*/\1/p'
+  else
+    echo "0"
+  fi
 }
 
-GetStepTotal() {
-  grep -oE "STEP [0-9]+ of [0-9]+" "$ProgressLog" 2>/dev/null | tail -1 | \
-    sed -n "s/STEP [0-9]\+ of \([0-9]\+\).*/\1/p" || echo "0"
+GetLatestStepNumbers() {
+  local line
+  line="$(GetLatestStepLine)"
+  if [ -n "$line" ]; then
+    echo "$line" | sed -n 's/STEP \([0-9]\+\) of \([0-9]\+\).*/\1 \2/p'
+  else
+    echo "0 0"
+  fi
 }
 
-GetStepLabel() {
-  local n="$1"
-  awk -v t="$n" '
-    /^STEP [0-9]+ of [0-9]+/ {
-      match($0, /STEP ([0-9]+)/, a)
-      if (a[1]+0 == t+0) { getline; print; exit }
-    }
-  ' "$ProgressLog" 2>/dev/null || true
+GetLatestLabel() {
+  awk '/STEP [0-9]+ of [0-9]+  \[[0-9]+%\]/{getline; print}' "$ProgressLog" 2>/dev/null | tail -n 1 || true
 }
 
-PrintBanner() {
-  local Num="$1" Total="$2" Label="$3"
-  printf "\n${C_DIM}=========================================================${C_RESET}\n"
-  printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$Num" "$Total" "$Label"
-  printf "${C_DIM}=========================================================${C_RESET}\n"
-}
+RenderLine() {
+  local Percent="$1"
+  local StepNow="$2"
+  local StepTotal="$3"
+  local Label="$4"
+  local Frame="$5"
 
-PrintDeployed() {
-  local Num="$1" Total="$2"
-  printf "\r%-*s\n" "$Cols" " "
-  printf "${C_WHITE}Deployed  ${C_RESET}"
-  DrawFullBar
-  printf "  ${C_GREEN}STEP %s/%s${C_RESET}\n\n" "$Num" "$Total"
+  local Bar StepText StepPlain
+  Bar="$(DrawBar "$Percent")"
+
+  if [ "${StepTotal:-0}" -gt 0 ]; then
+    StepText="${C_GREEN}STEP ${StepNow}/${StepTotal}${C_RESET}"
+    StepPlain="STEP ${StepNow}/${StepTotal}"
+  else
+    StepText=""
+    StepPlain=""
+  fi
+
+  # Fixed visible width: "Deploying " (9) + bar (~30) + "  " + step + "  " + spinner (1) + padding (4)
+  local FixedLen=$(( 9 + 30 + 2 + ${#StepPlain} + 2 + 1 + 4 ))
+  local MaxLabel=$(( Cols - FixedLen ))
+  [ "$MaxLabel" -lt 8 ] && MaxLabel=8
+  local TruncLabel="${Label:0:$MaxLabel}"
+
+  # \r\033[2K clears the entire current line before redrawing — prevents
+  # ANSI-inflated line width from wrapping and leaving ghost fragments on right
+  printf "\r\033[2K"
+  if [ -n "$Frame" ]; then
+    printf "${C_WHITE}Deploying${C_RESET} %s  %s  ${C_YELLOW}%s${C_RESET}   ${C_YELLOW}%s${C_RESET}" \
+      "$Bar" "$StepText" "$TruncLabel" "$Frame"
+  else
+    printf "${C_WHITE}Deployed  ${C_RESET}%s  %s" "$Bar" "$StepText"
+  fi
 }
 
 echo ""
 echo "${C_BOLD}Watching EC2 user-data progress${C_RESET} (Ctrl+C to stop)"
 echo ""
 
-# --- one-time catch-up: print history of all steps already done ---
-InitStep=$(GetStepNum)
-InitTotal=$(GetStepTotal)
-s=1
-while [ "$s" -lt "$InitStep" ] 2>/dev/null; do
-  lbl=$(GetStepLabel "$s")
-  [ -z "$lbl" ] && lbl="Step $s"
-  PrintBanner "$s" "$InitTotal" "$lbl"
-  PrintDeployed "$s" "$InitTotal"
-  s=$((s+1))
-done
-# print banner for current active step
-if [ "$InitStep" -gt 0 ] 2>/dev/null; then
-  lbl=$(GetStepLabel "$InitStep")
-  [ -z "$lbl" ] && lbl="Step $InitStep"
-  PrintBanner "$InitStep" "$InitTotal" "$lbl"
-fi
-
-# --- main loop ---
-LastStep="$InitStep"
-ShownFilled=0
-TargetFill=0
 LastLineCount=$(wc -l < "$ProgressLog" 2>/dev/null || echo 0)
+
+TargetPercent="$(GetLatestPercent)"
+ShownPercent="$TargetPercent"
+read -r StepNow StepTotal <<<"$(GetLatestStepNumbers)"
+CurrentLabel="$(GetLatestLabel)"
+[ -z "${CurrentLabel:-}" ] && CurrentLabel="Starting..."
+
 i=0
 frames='|/-\'
 
 while true; do
-  CurStep=$(GetStepNum)
-  CurTotal=$(GetStepTotal)
-  CurLabel=$(GetStepLabel "$CurStep")
-  [ -z "${CurLabel:-}" ] && CurLabel="Running..."
-  CurLines=$(wc -l < "$ProgressLog" 2>/dev/null || echo "$LastLineCount")
+  CurrentLineCount=$(wc -l < "$ProgressLog" 2>/dev/null || echo "$LastLineCount")
 
-  # New step detected — print Deployed for finished step, banner for new one
-  if [ "${CurStep:-0}" -gt "${LastStep:-0}" ] 2>/dev/null; then
-    PrintDeployed "$LastStep" "$CurTotal"
-    PrintBanner "$CurStep" "$CurTotal" "$CurLabel"
-    LastStep="$CurStep"
-    ShownFilled=0
-    TargetFill=0
+  # Only print STEP banner lines from newly appended log content.
+  # Suppressing Status: lines and separators prevents them from pushing
+  # the dashboard bar to a new line each refresh cycle (multiline stacking).
+  if [ "$CurrentLineCount" -gt "$LastLineCount" ]; then
+    NewLines=$(sed -n "$((LastLineCount+1)),${CurrentLineCount}p" "$ProgressLog" 2>/dev/null || true)
+    if echo "$NewLines" | grep -qE "^STEP [0-9]+ of [0-9]+"; then
+      printf "\r%-*s\n" "$Cols" " "
+      echo "$NewLines" | grep -E "^(={10,}|STEP [0-9]+ of [0-9]+)" || true
+    fi
+    LastLineCount="$CurrentLineCount"
   fi
 
-  # Completion check
-  if [ "${CurStep:-0}" -ge "${CurTotal:-7}" ] && [ "${CurTotal:-0}" -gt 0 ] 2>/dev/null; then
-    PrintDeployed "$CurStep" "$CurTotal"
-    printf "${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
+  # Update targets from log
+  NewTarget="$(GetLatestPercent)"
+  [ -n "${NewTarget:-}" ] && TargetPercent="$NewTarget"
+
+  read -r NewStepNow NewStepTotal <<<"$(GetLatestStepNumbers)"
+  [ -n "${NewStepNow:-}" ] && StepNow="$NewStepNow"
+  [ -n "${NewStepTotal:-}" ] && StepTotal="$NewStepTotal"
+
+  NewLabel="$(GetLatestLabel)"
+  [ -n "${NewLabel:-}" ] && CurrentLabel="$NewLabel"
+
+  # Smooth-fill toward the target
+  if [ "$ShownPercent" -lt "$TargetPercent" ]; then
+    ShownPercent=$((ShownPercent+1))
+  elif [ "$ShownPercent" -gt "$TargetPercent" ]; then
+    ShownPercent="$TargetPercent"
+  fi
+
+  # Completion check — STEP 7 of 7
+  if tail -n 50 "$ProgressLog" 2>/dev/null | grep -q "STEP 7 of 7"; then
+    RenderLine 100 7 7 "$CurrentLabel" ""
+    printf "\n\n${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
     printf "  ${C_DIM}SSH in and run: ls -lh /var/lib/mysql-files/${C_RESET}\n\n"
     exit 0
   fi
 
-  # Hybrid fill: advance target when log grows, smooth-fill toward it
-  if [ "$CurLines" -gt "$LastLineCount" ] 2>/dev/null; then
-    StepStart=$(grep -n "STEP ${CurStep:-1} of" "$ProgressLog" 2>/dev/null | tail -1 | cut -d: -f1)
-    if [ -n "${StepStart:-}" ]; then
-      SCount=$(tail -n +"$StepStart" "$ProgressLog" 2>/dev/null | grep -c "^Status:" || echo 0)
-      MaxFill=$(( TotalBarWidth * 90 / 100 ))
-      TargetFill=$(( SCount * TotalBarWidth / 8 ))
-      [ "$TargetFill" -gt "$MaxFill" ] && TargetFill="$MaxFill"
-    fi
-    LastLineCount="$CurLines"
-  fi
-  if [ "$ShownFilled" -lt "${TargetFill:-0}" ] 2>/dev/null; then
-    ShownFilled=$((ShownFilled+1))
-  fi
-
-  # Render single animated line
   frame="${frames:i%4:1}"
-  ShownPct=$(( ShownFilled * 100 / TotalBarWidth ))
-  printf "\r\033[2K"
-  printf "${C_WHITE}Deploying ${C_RESET}"
-  DrawPartialBar "$ShownFilled"
-  printf " ${C_YELLOW}%3d%%${C_RESET}  ${C_CYAN}STEP %s/%s${C_RESET}   ${C_YELLOW}%s${C_RESET}" \
-    "$ShownPct" "${CurStep:-?}" "${CurTotal:-?}" "$frame"
+  RenderLine "$ShownPercent" "$StepNow" "$StepTotal" "$CurrentLabel" "$frame"
 
   i=$((i+1))
   sleep "$RefreshSeconds"
 done
+EOF
+
+chmod 755 /usr/local/bin/watch-userdata-progress
 EOF
 
 chmod 755 /usr/local/bin/watch-userdata-progress
