@@ -154,8 +154,8 @@ RenderLine() {
   # \r\033[2K clears the entire current line before redrawing — prevents
   # ANSI-inflated line width from wrapping and leaving ghost fragments on right
   printf "\r\033[2K"
-  printf "${C_WHITE}Deploying${C_RESET} %s  %s  ${C_YELLOW}%s${C_RESET}  %s" \
-    "$Bar" "$StepText" "$TruncLabel" "$Frame"
+  printf "${C_WHITE}Deploying${C_RESET} %s  %s  ${C_YELLOW}%s${C_RESET}" \
+    "$Bar" "$StepText" "$Frame"
 }
 
 echo ""
@@ -183,7 +183,16 @@ while true; do
     NewLines=$(sed -n "$((LastLineCount+1)),${CurrentLineCount}p" "$ProgressLog" 2>/dev/null || true)
     if echo "$NewLines" | grep -qE "^STEP [0-9]+ of [0-9]+"; then
       printf "\r%-*s\n" "$Cols" " "
-      echo "$NewLines" | grep -E "^(={10,}|STEP [0-9]+ of [0-9]+)" || true
+      # Print Deployed line for the step that just finished
+      if [ "${StepNow:-0}" -gt 0 ]; then
+        FullBar="$(DrawBar 100)"
+        printf "${C_WHITE}Deployed  ${C_RESET}%s\n\n" "$FullBar"
+      fi
+      # Print separator, step line, and label for the new step
+      echo "$NewLines" | awk '
+        /^={10,}/ { print; next }
+        /^STEP [0-9]+ of [0-9]+/ { print; getline; if (length($0) > 0) print; next }
+      ' || true
     fi
     LastLineCount="$CurrentLineCount"
   fi
@@ -210,7 +219,7 @@ while true; do
   if tail -n 50 "$ProgressLog" 2>/dev/null | grep -q "STEP 7 of 7"; then
     RenderLine 100 7 7 "$CurrentLabel" ""
     printf "\n\n${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
-    printf "  ${C_DIM}SSH in and run: ls -lh /var/lib/mysql-files/${C_RESET}\n\n"
+    printf "  ${C_DIM}Run: ls -lh /var/lib/mysql-files/${C_RESET}\n\n"
     exit 0
   fi
 
@@ -244,10 +253,12 @@ LogStatus "Running apt update/upgrade"
 apt-get update -y
 apt-get upgrade -y
 apt-get install -y apt-transport-https curl unzip wget jq
+sleep 8
 LogStatus "Prerequisites installed"
 
 # ── STEP 2: Install MariaDB 11.8 ────────────────────────────
 NextStep "Installing MariaDB 11.8"
+sleep 5
 LogStatus "Adding MariaDB 11.8 repo"
 mkdir -p /etc/apt/keyrings
 curl -o /etc/apt/keyrings/mariadb-keyring.pgp \
@@ -267,6 +278,7 @@ apt-get install -y mariadb-server
 systemctl enable mariadb
 systemctl start mariadb
 systemctl is-active --quiet mariadb || { echo "ERROR: MariaDB did not start"; exit 1; }
+sleep 20
 LogStatus "MariaDB 11.8 running"
 
 # ── STEP 3: Create mbennett user + working directory ────────
@@ -283,6 +295,7 @@ LogStatus "mbennett home directory ready"
 
 # ── STEP 4: Download and extract dataset ────────────────────
 NextStep "Downloading dataset from 622.gomillion.org"
+sleep 5
 LogStatus "Downloading dataset zip"
 sudo -u mbennett wget -O /home/mbennett/313007119.zip \
   "https://622.gomillion.org/data/313007119.zip"
