@@ -65,7 +65,7 @@ if [ -t 1 ]; then
   C_CYAN=$'\033[36m'
   C_YELLOW=$'\033[33m'
   C_GREEN=$'\033[32m'
-  C_RED=$'\033[31m'
+  C_WHITE=$'\033[97m'
 else
   C_RESET=""
   C_DIM=""
@@ -73,148 +73,156 @@ else
   C_CYAN=""
   C_YELLOW=""
   C_GREEN=""
-  C_RED=""
+  C_WHITE=""
 fi
 
 Cols=$(tput cols 2>/dev/null || echo 120)
 
-DrawBar() {
-  local Percent="$1"
-  local Filled=$((Percent * TotalBarWidth / 100))
-  local Empty=$((TotalBarWidth - Filled))
+# Draw a full bar (used for completed steps)
+DrawFullBar() {
+  printf "${C_GREEN}[${C_RESET}"
+  printf "${C_GREEN}"
+  printf "%0.s#" $(seq 1 $TotalBarWidth)
+  printf "${C_RESET}"
+  printf "${C_GREEN}] 100%%${C_RESET}"
+}
 
-  printf "["
+# Draw a partial bar (used for current step)
+DrawPartialBar() {
+  local Filled="$1"
+  local Empty=$(( TotalBarWidth - Filled ))
+  printf "${C_CYAN}[${C_RESET}"
   if [ "$Filled" -gt 0 ]; then
-    printf "%s" "${C_CYAN}"
+    printf "${C_CYAN}"
     printf "%0.s#" $(seq 1 "$Filled")
-    printf "%s" "${C_RESET}"
+    printf "${C_RESET}"
   fi
   if [ "$Empty" -gt 0 ]; then
-    printf "%s" "${C_DIM}"
+    printf "${C_DIM}"
     printf "%0.s-" $(seq 1 "$Empty")
-    printf "%s" "${C_RESET}"
+    printf "${C_RESET}"
   fi
-  printf "] %s%%" "$Percent"
+  printf "${C_CYAN}]${C_RESET}"
 }
 
-GetLatestStepLine() {
-  grep -E "STEP [0-9]+ of [0-9]+  \[[0-9]+%\]" "$ProgressLog" 2>/dev/null | tail -n 1 || true
+# Get all completed step numbers and labels from log
+GetAllSteps() {
+  awk '
+    /^STEP [0-9]+ of [0-9]+/ {
+      match($0, /STEP ([0-9]+) of ([0-9]+)/, arr)
+      stepnum = arr[1]
+      steptotal = arr[2]
+      getline label
+      steps[stepnum] = label
+      total = steptotal
+    }
+    END {
+      for (i=1; i<=length(steps); i++) {
+        print i "\t" total "\t" steps[i]
+      }
+    }
+  ' "$ProgressLog" 2>/dev/null || true
 }
 
-GetLatestPercent() {
-  local line
-  line="$(GetLatestStepLine)"
-  if [ -n "$line" ]; then
-    echo "$line" | sed -n 's/.*\[\([0-9]\+\)%\].*/\1/p'
-  else
-    echo "0"
-  fi
+GetLatestStepNum() {
+  grep -oE "STEP [0-9]+ of [0-9]+" "$ProgressLog" 2>/dev/null | tail -1 | grep -oE "^STEP [0-9]+" | grep -oE "[0-9]+" || echo "0"
 }
 
-GetLatestStepNumbers() {
-  local line
-  line="$(GetLatestStepLine)"
-  if [ -n "$line" ]; then
-    echo "$line" | sed -n 's/STEP \([0-9]\+\) of \([0-9]\+\).*/\1 \2/p'
-  else
-    echo "0 0"
-  fi
+GetLatestStepTotal() {
+  grep -oE "STEP [0-9]+ of [0-9]+" "$ProgressLog" 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo "0"
 }
 
 GetLatestLabel() {
-  awk '/STEP [0-9]+ of [0-9]+  \[[0-9]+%\]/{getline; print}' "$ProgressLog" 2>/dev/null | tail -n 1 || true
+  awk '/STEP [0-9]+ of [0-9]+/{getline; print}' "$ProgressLog" 2>/dev/null | tail -1 || true
 }
 
-RenderLine() {
-  local Percent="$1"
-  local StepNow="$2"
-  local StepTotal="$3"
-  local Label="$4"
-  local Frame="$5"
+GetLatestStatus() {
+  grep "^Status:" "$ProgressLog" 2>/dev/null | tail -1 | sed 's/^Status: //' || true
+}
 
-  local Bar StepText StepPlain
-  Bar="$(DrawBar "$Percent")"
-
-  if [ "${StepTotal:-0}" -gt 0 ]; then
-    StepText="${C_GREEN}STEP ${StepNow}/${StepTotal}${C_RESET}"
-    StepPlain="STEP ${StepNow}/${StepTotal}"
-  else
-    StepText=""
-    StepPlain=""
-  fi
-
-  local FixedLen=$(( 9 + 30 + 2 + ${#StepPlain} + 2 + 1 + 4 ))
-  local MaxLabel=$(( Cols - FixedLen ))
-  [ "$MaxLabel" -lt 8 ] && MaxLabel=8
-  local TruncLabel="${Label:0:$MaxLabel}"
-
-  # \r\033[2K clears the entire current line before redrawing
-  printf "\r\033[2K"
-  printf "${C_BOLD}Deploying${C_RESET} %s  %s  ${C_YELLOW}%s${C_RESET}  %s" \
-    "$Bar" "$StepText" "$TruncLabel" "$Frame"
+# Print a permanent "Deployed" line for a completed step
+PrintDeployed() {
+  local StepNum="$1"
+  local StepTotal="$2"
+  local Label="$3"
+  printf "${C_WHITE}Deployed  ${C_RESET}"
+  DrawFullBar
+  printf "  ${C_GREEN}STEP %s/%s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$StepNum" "$StepTotal" "$Label"
 }
 
 echo ""
 echo "${C_BOLD}Watching EC2 user-data progress${C_RESET} (Ctrl+C to stop)"
 echo ""
 
-# Show some context
-tail -n 20 "$ProgressLog" 2>/dev/null || true
-
-LastLineCount=$(wc -l < "$ProgressLog" 2>/dev/null || echo 0)
-
-TargetPercent="$(GetLatestPercent)"
-ShownPercent="$TargetPercent"
-read -r StepNow StepTotal <<<"$(GetLatestStepNumbers)"
-CurrentLabel="$(GetLatestLabel)"
-[ -z "${CurrentLabel:-}" ] && CurrentLabel="Starting..."
-
+LastPrintedStep=0
+LastLineCount=0
 i=0
 frames='|/-\'
+ShownFilled=0
 
 while true; do
   CurrentLineCount=$(wc -l < "$ProgressLog" 2>/dev/null || echo "$LastLineCount")
+  CurrentStep=$(GetLatestStepNum)
+  StepTotal=$(GetLatestStepTotal)
+  CurrentLabel=$(GetLatestLabel)
+  CurrentStatus=$(GetLatestStatus)
+  [ -z "${CurrentLabel:-}" ] && CurrentLabel="Starting..."
+  [ -z "${CurrentStatus:-}" ] && CurrentStatus="Initializing..."
 
-  # Only print STEP banner lines from newly appended log content
-  if [ "$CurrentLineCount" -gt "$LastLineCount" ]; then
-    NewLines=$(sed -n "$((LastLineCount+1)),${CurrentLineCount}p" "$ProgressLog" 2>/dev/null || true)
-    if echo "$NewLines" | grep -qE "^STEP [0-9]+ of [0-9]+"; then
+  # Print permanent Deployed lines for newly completed steps
+  if [ "${CurrentStep:-0}" -gt "$LastPrintedStep" ]; then
+    # Print separator + Deployed line for each step that just completed
+    CompletedStep=$LastPrintedStep
+    while [ "$CompletedStep" -lt "$((CurrentStep - 1))" ]; do
+      CompletedStep=$((CompletedStep + 1))
+      StepLabel=$(awk -v n="$CompletedStep" '
+        /^STEP [0-9]+ of [0-9]+/ {
+          match($0, /STEP ([0-9]+)/, arr)
+          if (arr[1]+0 == n+0) { getline; print; exit }
+        }
+      ' "$ProgressLog" 2>/dev/null || true)
+      [ -z "$StepLabel" ] && StepLabel="Step $CompletedStep"
       printf "\r%-*s\n" "$Cols" " "
-      echo "$NewLines" | grep -E "^(={10,}|STEP [0-9]+ of [0-9]+)" || true
-    fi
-    LastLineCount="$CurrentLineCount"
-  fi
-
-  # Update targets from log
-  NewTarget="$(GetLatestPercent)"
-  [ -n "${NewTarget:-}" ] && TargetPercent="$NewTarget"
-
-  read -r NewStepNow NewStepTotal <<<"$(GetLatestStepNumbers)"
-  [ -n "${NewStepNow:-}" ] && StepNow="$NewStepNow"
-  [ -n "${NewStepTotal:-}" ] && StepTotal="$NewStepTotal"
-
-  NewLabel="$(GetLatestLabel)"
-  [ -n "${NewLabel:-}" ] && CurrentLabel="$NewLabel"
-
-  # Smooth-fill toward the target
-  if [ "$ShownPercent" -lt "$TargetPercent" ]; then
-    ShownPercent=$((ShownPercent+1))
-  elif [ "$ShownPercent" -gt "$TargetPercent" ]; then
-    ShownPercent="$TargetPercent"
+      printf "${C_DIM}==================================================${C_RESET}\n"
+      printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$CompletedStep" "$StepTotal" "$StepLabel"
+      printf "${C_DIM}==================================================${C_RESET}\n"
+      PrintDeployed "$CompletedStep" "$StepTotal" "$StepLabel"
+      echo ""
+    done
+    LastPrintedStep=$((CurrentStep - 1))
+    ShownFilled=0
   fi
 
   # Completion check — STEP 7 of 7
-  if tail -n 50 "$ProgressLog" 2>/dev/null | grep -q "STEP 7 of 7"; then
-    RenderLine 100 7 7 "$CurrentLabel" ""
-    printf "\n\n${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
+  if [ "${CurrentStep:-0}" -ge "${StepTotal:-7}" ] && [ "${StepTotal:-0}" -gt 0 ]; then
+    # Print final Deployed line
+    printf "\r%-*s\n" "$Cols" " "
+    printf "${C_DIM}==================================================${C_RESET}\n"
+    printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$CurrentStep" "$StepTotal" "$CurrentLabel"
+    printf "${C_DIM}==================================================${C_RESET}\n"
+    PrintDeployed "$CurrentStep" "$StepTotal" "$CurrentLabel"
+    echo ""
+    printf "${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
     printf "  ${C_DIM}SSH in and run: ls -lh /var/lib/mysql-files/${C_RESET}\n\n"
     exit 0
   fi
 
+  # Smooth fill toward full (target is always 100% for current step's bar)
+  if [ "$ShownFilled" -lt "$TotalBarWidth" ]; then
+    ShownFilled=$((ShownFilled + 1))
+  fi
+
+  # Single-line render — no cursor movement = no flicker
   frame="${frames:i%4:1}"
-  RenderLine "$ShownPercent" "$StepNow" "$StepTotal" "$CurrentLabel" "$frame"
+  ShownPct=$(( ShownFilled * 100 / TotalBarWidth ))
+  printf "\r\033[2K"
+  printf "${C_WHITE}Deploying${C_RESET} "
+  DrawPartialBar "$ShownFilled"
+  printf " ${C_YELLOW}%3d%%${C_RESET}  ${C_CYAN}STEP %s/%s${C_RESET}  ${C_DIM}%s${C_RESET}  ${C_YELLOW}%s${C_RESET}" \
+    "$ShownPct" "${CurrentStep:-?}" "${StepTotal:-?}" "$CurrentLabel" "$frame"
 
   i=$((i+1))
+  LastLineCount="$CurrentLineCount"
   sleep "$RefreshSeconds"
 done
 EOF
