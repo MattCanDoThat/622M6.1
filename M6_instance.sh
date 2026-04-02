@@ -217,8 +217,10 @@ while true; do
 
   # Completion check — STEP 8 of 8
   if tail -n 50 "$ProgressLog" 2>/dev/null | grep -q "STEP 7 of 7"; then
-    RenderLine 100 7 7 "$CurrentLabel" ""
-    printf "\n\n${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
+    FullBar="$(DrawBar 100)"
+    printf "\r%-*s\n" "$Cols" " "
+    printf "${C_WHITE}Deployed  ${C_RESET}%s\n\n" "$FullBar"
+    printf "${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
     printf "  ${C_DIM}Run: ls -lh /var/lib/mysql-files/${C_RESET}\n\n"
     exit 0
   fi
@@ -283,6 +285,7 @@ LogStatus "MariaDB 11.8 running"
 
 # ── STEP 3: Create mbennett user + working directory ────────
 NextStep "Creating Linux user mbennett and working directory"
+sleep 5
 if id "mbennett" &>/dev/null; then
   LogStatus "User mbennett already exists"
 else
@@ -314,6 +317,7 @@ LogStatus "Dataset downloaded and verified (4 CSVs present)"
 
 # ── STEP 5: Generate etl.sql ────────────────────────────────
 NextStep "Generating etl.sql"
+sleep 8
 LogStatus "Writing etl.sql"
 
 cat > /home/mbennett/etl.sql << 'ETLEOF'
@@ -493,6 +497,7 @@ LogStatus "etl.sql written"
 
 # ── STEP 6: Generate json.sql ────────────────────────────────
 NextStep "Generating json.sql"
+sleep 8
 LogStatus "Writing json.sql"
 
 cat > /home/mbennett/json.sql << 'JSONEOF'
