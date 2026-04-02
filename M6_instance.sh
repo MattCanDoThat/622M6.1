@@ -225,9 +225,6 @@ done
 EOF
 
 chmod 755 /usr/local/bin/watch-userdata-progress
-EOF
-
-chmod 755 /usr/local/bin/watch-userdata-progress
 
 # ── Create watchud shortcut command ─────────────────────────
 
