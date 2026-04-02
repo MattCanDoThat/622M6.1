@@ -170,8 +170,9 @@ read -r StepNow StepTotal <<<"$(GetLatestStepNumbers)"
 CurrentLabel="$(GetLatestLabel)"
 [ -z "${CurrentLabel:-}" ] && CurrentLabel="Starting..."
 
-# Print the current step banner on startup so it always shows above the bar
+# Print the current step banner on startup
 if [ "${StepNow:-0}" -gt 0 ]; then
+  echo ""
   printf "${C_DIM}=========================================================${C_RESET}\n"
   printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$StepNow" "$StepTotal" "$CurrentLabel"
   printf "${C_DIM}=========================================================${C_RESET}\n"
@@ -195,11 +196,14 @@ while true; do
         FullBar="$(DrawBar 100)"
         printf "${C_WHITE}Deployed  ${C_RESET}%s\n\n" "$FullBar"
       fi
-      # Print separator, step line, and label for the new step
-      echo "$NewLines" | awk '
-        /^={10,}/ { print; next }
-        /^STEP [0-9]+ of [0-9]+/ { print; getline; if (length($0) > 0) print; next }
-      ' || true
+      # Print separator, step line, and label for the new step — colored to match startup
+      NewStepNum=$(echo "$NewLines" | grep -oE "STEP [0-9]+" | tail -1 | grep -oE "[0-9]+")
+      NewStepLbl=$(echo "$NewLines" | awk '/^STEP [0-9]+ of [0-9]+/{getline; print; exit}')
+      NewStepTot=$(echo "$NewLines" | grep -oE "STEP [0-9]+ of [0-9]+" | tail -1 | grep -oE "[0-9]+$")
+      echo ""
+      printf "${C_DIM}=========================================================${C_RESET}\n"
+      printf "${C_GREEN}STEP %s of %s${C_RESET}  ${C_DIM}%s${C_RESET}\n" "$NewStepNum" "$NewStepTot" "$NewStepLbl"
+      printf "${C_DIM}=========================================================${C_RESET}\n"
     fi
     LastLineCount="$CurrentLineCount"
   fi
