@@ -15,7 +15,7 @@ export NEEDRESTART_MODE=a
 
 touch /root/1-script-started
 
-# ── Progress logging ───────────────
+# ── Progress logging (matches Module 4 style) ───────────────
 ProgressLog="/var/log/user-data-progress.log"
 touch "$ProgressLog"
 chmod 644 "$ProgressLog"
@@ -541,10 +541,13 @@ SELECT JSON_OBJECT(
 )
 INTO OUTFILE '/var/lib/mysql-files/prod.json'
 LINES TERMINATED BY '\n'
-FROM Product   p
-JOIN Orderline ol ON ol.product_id  = p.id
-JOIN `Order`   o  ON o.id           = ol.order_id
-JOIN Customer  c  ON c.id           = o.customer_id
+FROM Product p
+JOIN (
+    SELECT DISTINCT ol.product_id, o.customer_id
+    FROM Orderline ol
+    JOIN `Order` o ON o.id = ol.order_id
+) pc ON pc.product_id = p.id
+JOIN Customer c ON c.id = pc.customer_id
 GROUP BY p.id, p.currentPrice, p.name;
 
 
