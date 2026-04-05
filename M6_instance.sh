@@ -15,7 +15,7 @@ export NEEDRESTART_MODE=a
 
 touch /root/1-script-started
 
-# ── Progress logging (matches Module 4 style) ───────────────
+# ── Progress logging ───────────────
 ProgressLog="/var/log/user-data-progress.log"
 touch "$ProgressLog"
 chmod 644 "$ProgressLog"
