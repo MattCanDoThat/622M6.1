@@ -20,7 +20,7 @@ ProgressLog="/var/log/user-data-progress.log"
 touch "$ProgressLog"
 chmod 644 "$ProgressLog"
 
-TotalSteps=7
+TotalSteps=9
 CurrentStep=0
 
 NextStep() {
@@ -226,13 +226,13 @@ while true; do
     ShownPercent="$TargetPercent"
   fi
 
-  # Completion check — STEP 8 of 8
-  if tail -n 50 "$ProgressLog" 2>/dev/null | grep -q "STEP 7 of 7"; then
+  # Completion check — STEP 9 of 9
+  if tail -n 50 "$ProgressLog" 2>/dev/null | grep -q "STEP 9 of 9"; then
     FullBar="$(DrawBar 100)"
     printf "\r%-*s\n" "$Cols" " "
     printf "${C_WHITE}Deployed  ${C_RESET}%s\n\n" "$FullBar"
-    printf "${C_GREEN}  Deployment complete — JSON exports ready in /var/lib/mysql-files/${C_RESET}\n"
-    printf "  ${C_DIM}Run: ls -lh /var/lib/mysql-files/${C_RESET}\n\n"
+    printf "${C_GREEN}  Deployment complete — MariaDB + MongoDB pipeline ready${C_RESET}\n"
+    printf "  ${C_DIM}Run: mongosh FurnitureDB --eval 'db.Customers.countDocuments({})'${C_RESET}\n\n"
     exit 0
   fi
 
@@ -294,7 +294,26 @@ systemctl is-active --quiet mariadb || { echo "ERROR: MariaDB did not start"; ex
 sleep 20
 LogStatus "MariaDB 11.8 running"
 
-# ── STEP 3: Create mbennett user + working directory ────────
+# ── STEP 3: Install MongoDB Community Edition ────────────────
+NextStep "Installing MongoDB Community Edition"
+sleep 5
+LogStatus "Adding MongoDB 8.0 repo"
+curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc \
+  | gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg
+
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] \
+https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" \
+  | tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+
+apt-get update -y
+apt-get install -y mongodb-org
+systemctl enable mongod
+systemctl start mongod
+systemctl is-active --quiet mongod || { echo "ERROR: mongod did not start"; exit 1; }
+sleep 10
+LogStatus "MongoDB 7.0 running"
+
+# ── STEP 4: Create mbennett user + working directory ────────
 NextStep "Creating Linux user mbennett and working directory"
 sleep 5
 if id "mbennett" &>/dev/null; then
@@ -307,7 +326,7 @@ fi
 chmod 755 /home/mbennett
 LogStatus "mbennett home directory ready"
 
-# ── STEP 4: Download and extract dataset ────────────────────
+# ── STEP 5: Download and extract dataset ────────────────────
 NextStep "Downloading dataset from 622.gomillion.org"
 sleep 5
 LogStatus "Downloading dataset zip"
@@ -326,7 +345,7 @@ for f in customers.csv orders.csv orderlines.csv products.csv; do
 done
 LogStatus "Dataset downloaded and verified (4 CSVs present)"
 
-# ── STEP 5: Generate etl.sql ────────────────────────────────
+# ── STEP 6: Generate etl.sql ────────────────────────────────
 NextStep "Generating etl.sql"
 sleep 8
 LogStatus "Writing etl.sql"
@@ -506,28 +525,15 @@ chown mbennett:mbennett /home/mbennett/etl.sql
 chmod 644 /home/mbennett/etl.sql
 LogStatus "etl.sql written"
 
-# ── STEP 6: Generate json.sql ────────────────────────────────
+# ── STEP 7: Generate json.sql ────────────────────────────────
 NextStep "Generating json.sql"
 sleep 8
 LogStatus "Writing json.sql"
 
 cat > /home/mbennett/json.sql << 'JSONEOF'
--- ====================================================================
---  json.sql  |  ISTM 622 – Module 6 JSON Export
---  Four NDJSON business-case exports from the POS database.
---  Each SELECT writes one JSON object per line (NDJSON format).
---  Run via:  sudo mariadb < /home/mbennett/json.sql
--- ====================================================================
-
 USE POS;
 
--- ====================================================================
--- CASE 1: Product Aggregate  →  prod.json
---   Root:   ProductID, currentPrice, productName
---   Nested: customers[] — every customer who purchased it
---           (CustomerID, customer_name)
--- ====================================================================
-
+-- prod.json
 SELECT JSON_OBJECT(
     'ProductID',    p.id,
     'currentPrice', p.currentPrice,
@@ -550,30 +556,7 @@ JOIN (
 JOIN Customer c ON c.id = pc.customer_id
 GROUP BY p.id, p.currentPrice, p.name;
 
-
--- ====================================================================
--- CASE 2: Deep Customer Aggregate  →  cust.json
---
---   Root fields:
---     customer_name      : firstName + ' ' + lastName
---     printed_address_1  : address1 only when address2 is NULL/empty
---                          address1 + ' ' + address2 when present
---                          (data already has 'Apt #NNN' format — no # separator needed)
---     printed_address_2  : "City, ST   ZZZZZ"
---                          (city from City table; 3 spaces before zip)
---
---   Nested:  orders[]
---     OrderTotal  : SUM(currentPrice * quantity) for all items
---     OrderDate   : datePlaced  (YYYY-MM-DD)
---     ShipDate    : dateShipped (YYYY-MM-DD)
---     Items[]
---       ProductID, Quantity, ProductName
---
---   Built in 2 CTEs so each layer is debuggable independently:
---     ItemsAgg  — items array + order total, grouped by order
---     OrdersAgg — orders array, grouped by customer
--- ====================================================================
-
+-- cust.json
 WITH ItemsAgg AS (
     SELECT
         ol.order_id,
@@ -622,23 +605,7 @@ FROM Customer  c
 JOIN City      ct ON ct.zip         = c.zip
 JOIN OrdersAgg oa ON oa.customer_id = c.id;
 
-
--- ====================================================================
--- CASE 3 (Custom): Regional Territory Revenue View
---   →  custom1.json
---
---   Business Case:
---   The regional sales team needs a fast dashboard showing
---   each state's revenue and top products without running
---   expensive live JOINs on every page load. This pre-computed
---   document powers a State Leaderboard widget and geographic
---   heat map with a single document read per state.
---
---   Root:   state, total_revenue, total_orders
---   Nested: top_products[]
---             ProductID, productName, units_sold, product_revenue
--- ====================================================================
-
+-- custom1.json
 WITH StateOrderCounts AS (
     SELECT
         ct.state,
@@ -662,47 +629,41 @@ StateProductRev AS (
     JOIN Orderline ol ON ol.order_id   = o.id
     JOIN Product   p  ON p.id          = ol.product_id
     GROUP BY ct.state, p.id, p.name
+),
+
+TopStateProducts AS (
+    SELECT *
+    FROM (
+        SELECT *,
+               ROW_NUMBER() OVER (
+                   PARTITION BY state
+                   ORDER BY product_revenue DESC
+               ) AS rn
+        FROM StateProductRev
+    ) ranked
+    WHERE rn <= 10
 )
 
 SELECT JSON_OBJECT(
-    'state',         spr.state,
-    'total_revenue', ROUND(SUM(spr.product_revenue), 2),
+    'state',         tsp.state,
+    'total_revenue', ROUND(SUM(tsp.product_revenue), 2),
     'total_orders',  soc.total_orders,
     'top_products',  JSON_ARRAYAGG(
                          JSON_OBJECT(
-                             'ProductID',       spr.product_id,
-                             'productName',     spr.product_name,
-                             'units_sold',      spr.units_sold,
-                             'product_revenue', spr.product_revenue
+                             'ProductID',       tsp.product_id,
+                             'productName',     tsp.product_name,
+                             'units_sold',      tsp.units_sold,
+                             'product_revenue', tsp.product_revenue
                          )
                      )
 )
 INTO OUTFILE '/var/lib/mysql-files/custom1.json'
 LINES TERMINATED BY '\n'
-FROM StateProductRev  spr
-JOIN StateOrderCounts soc ON soc.state = spr.state
-GROUP BY spr.state, soc.total_orders;
+FROM TopStateProducts tsp
+JOIN StateOrderCounts soc ON soc.state = tsp.state
+GROUP BY tsp.state, soc.total_orders;
 
-
--- ====================================================================
--- CASE 4 (Custom): Customer Lifetime Value & Loyalty Profile
---   →  custom2.json
---
---   Business Case:
---   The CRM team assigns loyalty tiers and sends personalized
---   re-engagement emails. Running aggregation queries across
---   the full order history at email-blast time is slow and
---   causes load spikes. This pre-computed profile enables
---   instant tier assignment (Bronze/Silver/Gold) and
---   "Because you bought X" recommendations with a single
---   document read and zero live computation.
---
---   Root:   CustomerID, customer_name, email,
---           lifetime_spend, total_orders, avg_order_value
---   Nested: top_products[]  (top 3 by spend)
---             ProductID, productName, times_purchased, total_spent
--- ====================================================================
-
+-- custom2.json
 WITH CustomerOrderTotals AS (
     SELECT
         o.customer_id,
@@ -814,7 +775,7 @@ chown mbennett:mbennett /home/mbennett/title_case.sql
 chmod 644 /home/mbennett/title_case.sql
 LogStatus "title_case.sql written"
 
-# ── STEP 7: Run ETL then JSON export ────────────────────────
+# ── STEP 8: Run ETL then JSON export ────────────────────────
 NextStep "Running etl.sql and json.sql"
 
 LogStatus "Running etl.sql — building POS database"
@@ -858,8 +819,85 @@ LogStatus "json.sql complete — 4 NDJSON files generated"
 chown ubuntu:ubuntu /var/lib/mysql-files/*.json 2>/dev/null || true
 
 echo ""
-echo "===================================================================="
-echo "  M6 deployment complete."
-echo "  JSON files in /var/lib/mysql-files/:"
+echo "  JSON exports complete."
 ls -lh /var/lib/mysql-files/*.json
+
+# ── STEP 9: Generate sync.sh, initial MongoDB import, cron ──
+NextStep "Generating sync.sh, loading MongoDB, and scheduling cron"
+sleep 5
+
+LogStatus "Writing sync.sh"
+cat > /home/mbennett/sync.sh << 'SYNCEOF'
+#!/bin/bash
+# ============================================================
+#  sync.sh  |  ISTM 622 – Module 7
+#  Data Pipeline: MariaDB → MongoDB
+#  Steps: Clean → Extract → Load
+# ============================================================
+set -euo pipefail
+
+JSONDIR="/var/lib/mysql-files"
+DB="FurnitureDB"
+
+echo "=============================="
+echo " sync.sh started: $(date)"
+echo "=============================="
+
+echo "[1/3] CLEAN — Removing old JSON exports..."
+rm -f "${JSONDIR}/prod.json" \
+      "${JSONDIR}/cust.json" \
+      "${JSONDIR}/custom1.json" \
+      "${JSONDIR}/custom2.json"
+echo "      Done."
+
+echo "[2/3] EXTRACT — Running json.sql to generate fresh NDJSON..."
+mariadb < /home/mbennett/json.sql
+echo "      Done."
+
+echo "[3/3] LOAD — Importing into MongoDB (${DB})..."
+mongoimport --db "${DB}" --collection Products  --file "${JSONDIR}/prod.json"    --drop
+mongoimport --db "${DB}" --collection Customers --file "${JSONDIR}/cust.json"    --drop
+mongoimport --db "${DB}" --collection RegionalRevenue --file "${JSONDIR}/custom1.json" --drop
+mongoimport --db "${DB}" --collection CustomerLTV     --file "${JSONDIR}/custom2.json" --drop
+echo "      All collections imported."
+
+echo "=============================="
+echo " sync.sh complete: $(date)"
+echo "=============================="
+SYNCEOF
+
+chown mbennett:mbennett /home/mbennett/sync.sh
+chmod 755 /home/mbennett/sync.sh
+LogStatus "sync.sh written"
+
+LogStatus "Running initial sync.sh to populate MongoDB"
+bash /home/mbennett/sync.sh
+LogStatus "Initial MongoDB load complete"
+
+LogStatus "Scheduling sync.sh via cron (every 5 minutes, run as root)"
+# Write cron entry to /etc/cron.d so it survives reboots and runs as root
+cat > /etc/cron.d/furniture-sync << 'CRONEOF'
+
+#sync MariaDB exports into MongoDB every minute
+
+
+*/1 * * * * root bash /home/mbennett/sync.sh >> /var/log/sync.log 2>&1
+
+
+CRONEOF
+chmod 644 /etc/cron.d/furniture-sync
+LogStatus "Cron job scheduled (every minute)"
+
+echo ""
+echo "===================================================================="
+echo "  M7 deployment complete."
+echo "  MariaDB + MongoDB pipeline ready."
+echo "  Collections in FurnitureDB:"
+mongosh --quiet --eval "
+  use('FurnitureDB');
+  print('  Products:       ' + db.Products.countDocuments());
+  print('  Customers:      ' + db.Customers.countDocuments());
+  print('  RegionalRevenue:' + db.RegionalRevenue.countDocuments());
+  print('  CustomerLTV:    ' + db.CustomerLTV.countDocuments());
+" 2>/dev/null || echo "  (mongosh count skipped — check manually)"
 echo "===================================================================="
